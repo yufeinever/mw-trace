@@ -1,0 +1,14 @@
+Third-party runtime components
+
+Node.js v22.23.2 (Windows x64)
+Source: https://nodejs.org/dist/v22.23.2/win-x64/node.exe
+SHA-256: 0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4
+License: See NODE-LICENSE.txt included with this package.
+
+SQLite command-line tools 3.53.4 (Windows x64)
+Source: https://sqlite.org/2026/sqlite-tools-win-x64-3530400.zip
+Archive size: 6557792 bytes
+SHA3-256: 88b4659fe747896b853af10157316b4ade143553efb89c1c8ca7423a278dcc8b
+SQLite is in the public domain: https://sqlite.org/copyright.html
+
+Only node.exe and sqlite3.exe from these official distributions are bundled.

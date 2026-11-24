@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { attachRoutedModels, applyTimingEvent } from '../server.mjs';
+
+const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+for(const script of html.split('<script>').slice(1))new vm.Script(script.split('</script>')[0]);
+const context={waitThreshold:1,ms:n=>`${n}ms`};
+vm.createContext(context);
+for(const [start,end] of [['function modelCallsForTiming(','function childName('],['function stepCompletedWithoutFinish(','function contextStats('],['function ineffectiveTiming(','function timingEvidenceHtml(']]){
+  vm.runInContext(html.slice(html.indexOf(start),html.indexOf(end,html.indexOf(start))),context);
+}
+const sample=()=>({finish:'stop',time:{created:1000,completed:9000},tools:[],modelCalls:[{modelCallId:'one',startedAt:1000,finishedAt:8000}],waitTiming:{attempts:[{measurementVersion:4,startObserved:true,startedAt:1000,firstChunkAt:2000,lastChunkAt:6000,streamGaps:{text:[{durationMs:1400}],reasoning:[{durationMs:2340}],toolInput:[]},openStreams:['reasoning:r'],streamActive:true,lastChunkAtByStream:{'reasoning:r':6000}}]}});
+let step=sample();
+let wait=context.ineffectiveTiming(step,1,10000);
+assert.equal(wait.ttftMilliseconds,1000);
+assert.equal(wait.stallMilliseconds,1400);
+assert.equal(wait.generationMilliseconds,2340);
+step.finish=null;delete step.time.completed;
+assert.equal(context.ineffectiveTiming(step,1,900000).generationMilliseconds,2340);
+step=sample();step.waitTiming.attempts[0].startObserved=false;
+assert.equal(context.ineffectiveTiming(step).stallState,'partial');
+assert.equal(context.ineffectiveTiming(step).ttftMilliseconds,1000);
+step=sample();step.error={message:'Aborted'};step.finish=null;delete step.time.completed;step.modelCalls[0].finishedAt=null;step.waitTiming.attempts[0].firstChunkAt=null;
+assert.equal(context.ineffectiveTiming(step,1,100000).ttftMilliseconds,null);
+assert.doesNotMatch(context.ineffectiveTiming(step,1,100000).ttftLabel,/计时中/);
+assert.equal(Number.isNaN(context.requestBounds(step,100000).end),true);
+step=sample();step.modelCalls.push({modelCallId:'two',startedAt:1500,finishedAt:8500});
+assert.equal(context.modelCallsForTiming(step).length,2);
+assert.equal(context.ineffectiveTiming(step).ttftMilliseconds,null);
+step.modelCalls[1].startedAt=7000;step.modelCalls[1].finishedAt=9000;
+step.modelCalls[0].finishedAt=6000;
+step.waitTiming.attempts.push({...step.waitTiming.attempts[0],startedAt:7000,firstChunkAt:8000});
+assert.equal(context.ineffectiveTiming(step).ttftMilliseconds,2000);
+
+const first={id:'old',type:'assistant',time:{created:1000,completed:2000}};
+const second={id:'next',type:'assistant',time:{created:5000,completed:8000},waitTiming:{attempts:[{firstChunkAt:5100,lastChunkAt:7000}]}};
+attachRoutedModels([first,second],{byMessage:new Map(),calls:[{modelCallId:'next-call',messageId:'user-turn',startedAt:2100,finishedAt:7100,actualModels:['real']}]});
+assert.equal(first.modelCalls.length,0);
+assert.equal(second.modelCalls[0].modelCallId,'next-call');
+assert.equal(second.modelCalls[0].association,'stream-window');
+const store={steps:{}};
+const event=(type,timestamp,extra={})=>({type,properties:{sessionID:'ses_test',assistantMessageID:'msg_test',timestamp,...extra}});
+applyTimingEvent(store,event('session.next.step.started',1000));
+applyTimingEvent(store,event('session.next.text.delta',1100,{textID:'a'}));
+applyTimingEvent(store,event('session.next.text.ended',1200,{textID:'a'}));
+applyTimingEvent(store,event('session.next.text.delta',5000,{textID:'a'}));
+assert.equal(store.steps.msg_test.attempts[0].streamGaps.text.length,0);
+applyTimingEvent(store,event('session.next.reasoning.delta',5100));
+assert.equal(store.steps.msg_test.attempts[0].capturePartial,true);
+console.log('v0.0.29: association, stale snapshot, partial capture, terminal, retry and stream lifecycle passed');

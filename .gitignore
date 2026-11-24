@@ -1,0 +1,13 @@
+runtime/
+node_modules/
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.zip
+*.log
+*.png
+*.mp4
+trace记录*.html
